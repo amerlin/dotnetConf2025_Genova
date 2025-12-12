@@ -50,14 +50,16 @@ foreach (var item in leftJoinNew)
     Console.WriteLine($"{item.Name}: {item.OrderAmount}");
 }
 
-Console.WriteLine("\n=== RIGHT JOIN (EF Core 10 - Nuova Sintassi simulato con LeftJoin) ===");
-// RightJoin non è supportato da InMemory, ma possiamo simularlo invertendo la logica con LeftJoin
-var rightJoinNew = context.Customers
-    .LeftJoin(context.Orders, c => c.Id, o => o.CustomerId, (c, o) => new { c.Name, OrderAmount = (o != null ? o.Amount : 0) })
-    .Where(x => x.OrderAmount > 0); // Solo chi ha ordini
+Console.WriteLine("\n=== RIGHT JOIN (EF Core 10 - Simulato con LeftJoin) ===");
+// NOTA: RightJoin esiste in EF Core 10, MA il provider InMemory non lo supporta
+// Questo è un limite del provider InMemory, non di EF Core stesso
+// Con SQL Server, PostgreSQL, ecc. RightJoin funzionerebbe perfettamente
+// Simuliamo il RIGHT JOIN invertendo la query: Orders LEFT JOIN Customers
+var rightJoinNew = context.Orders
+    .LeftJoin(context.Customers, o => o.CustomerId, c => c.Id, (o, c) => new { CustomerName = (c != null ? c.Name : "N/A"), o.Amount });
 
 foreach (var item in rightJoinNew)
 {
-    Console.WriteLine($"{item.Name}: {item.OrderAmount}");
+    Console.WriteLine($"{item.CustomerName}: {item.Amount}");
 }
 
