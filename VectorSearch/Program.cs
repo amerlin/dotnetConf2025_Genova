@@ -1,7 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using VectorSearch;
 
-Console.WriteLine("=== Vector Search con Entity Framework Core 10 e SQL Server 2025 ===\n");
+Console.WriteLine("=== Vector Search con EF Core 10 Primitive Collections ===");
+Console.WriteLine("Dimostra: Primitive Collections, AsNoTracking, Query LINQ\n");
 
 // Inizializza il database
 await InitializeDatabaseAsync();
@@ -33,6 +34,7 @@ async Task InitializeDatabaseAsync()
 			Description = "Potente laptop per sviluppatori con processore Intel i9 e 32GB RAM",
 			Category = "Elettronica",
 			Price = 1899.99m,
+			// EF Core 10: Primitive Collection - salvata automaticamente come JSON
 			Embedding = GenerateMockEmbedding("laptop computer developer programming high performance")
 		},
 		new Product
@@ -93,10 +95,11 @@ async Task InitializeDatabaseAsync()
 		}
 	};
 
+	// EF Core 10: AddRange salva automaticamente le Primitive Collections come JSON
 	await context.Products.AddRangeAsync(products);
 	await context.SaveChangesAsync();
 
-	Console.WriteLine($"✓ Inseriti {products.Length} prodotti\n");
+	Console.WriteLine($"✓ Inseriti {products.Length} prodotti con Primitive Collections\n");
 }
 
 /// <summary>
@@ -125,19 +128,64 @@ async Task PerformVectorSearchAsync()
 	Console.WriteLine("\n--- Ricerca 4: 'schermo alta risoluzione' ---");
 	var query4 = GenerateMockEmbedding("display high resolution screen monitor quality");
 	await SearchAndDisplayAsync(context, query4, 3);
+
+	// EF Core 10 Feature: Query con filtri su Primitive Collections
+	Console.WriteLine("\n=== EF Core 10: Query LINQ su Primitive Collections ===");
+	await DemonstrateEFCore10FeaturesAsync(context);
 }
 
 /// <summary>
-/// Esegue la ricerca vettoriale e visualizza i risultati
+/// Dimostra le funzionalità di EF Core 10 con Primitive Collections
+/// </summary>
+async Task DemonstrateEFCore10FeaturesAsync(ProductContext context)
+{
+	Console.WriteLine("\n1. Count degli embeddings con LINQ:");
+	// EF Core 10: Conta quanti prodotti hanno embeddings di 384 dimensioni
+	var productsWithEmbeddings = await context.Products
+		.Where(p => p.Embedding.Count == 384)
+		.CountAsync();
+	Console.WriteLine($"   Prodotti con 384 dimensioni: {productsWithEmbeddings}");
+
+	Console.WriteLine("\n2. Proiezione con AsNoTracking:");
+	// EF Core 10: AsNoTracking per query read-only ottimizzate
+	var productInfo = await context.Products
+		.AsNoTracking()
+		.Select(p => new { p.Name, EmbeddingSize = p.Embedding.Count })
+		.Take(3)
+		.ToListAsync();
+
+	foreach (var item in productInfo)
+	{
+		Console.WriteLine($"   • {item.Name}: {item.EmbeddingSize} dimensioni");
+	}
+
+	Console.WriteLine("\n3. Filtri complessi con Primitive Collections:");
+	// EF Core 10: Query LINQ complesse
+	var expensiveProducts = await context.Products
+		.AsNoTracking()
+		.Where(p => p.Price > 500 && p.Embedding.Count > 0)
+		.OrderByDescending(p => p.Price)
+		.Select(p => new { p.Name, p.Price, HasEmbedding = p.Embedding.Count > 0 })
+		.ToListAsync();
+
+	Console.WriteLine("   Prodotti oltre €500:");
+	foreach (var product in expensiveProducts)
+	{
+		Console.WriteLine($"   • {product.Name}: €{product.Price:N2} - Embedding: {(product.HasEmbedding ? "✓" : "✗")}");
+	}
+}
+
+/// <summary>
+/// Esegue la ricerca vettoriale con EF Core 10
 /// </summary>
 async Task SearchAndDisplayAsync(ProductContext context, List<float> queryEmbedding, int topK)
 {
-	Console.WriteLine("  Esecuzione ricerca vettoriale...");
+	Console.WriteLine("  Esecuzione ricerca vettoriale con EF Core 10...");
 
-	// EF Core 10 Feature: Caricamento ottimizzato con proiezione
-	// Carichiamo solo i campi necessari per la ricerca
+	// EF Core 10: AsNoTracking per query ottimizzate senza change tracking
+	// Primitive Collections caricate automaticamente dal JSON
 	var allProducts = await context.Products
-		.AsNoTracking() // EF Core 10: Performance ottimizzata per query read-only
+		.AsNoTracking()
 		.Select(p => new
 		{
 			p.Id,
@@ -149,35 +197,51 @@ async Task SearchAndDisplayAsync(ProductContext context, List<float> queryEmbedd
 		})
 		.ToListAsync();
 
-	Console.WriteLine($"  Prodotti caricati: {allProducts.Count}");
-	Console.WriteLine($"  Calcolo similarità coseno...\n");
-
-	// Calcolo della similarità vettoriale (in produzione, SQL Server 2025 
-	// supporterebbe VECTOR_DISTANCE nativamente, ma per questa demo
-	// usiamo il calcolo in-memory per garantire la compatibilità)
+	// Calcola similarità in-memory
 	var scoredResults = allProducts
 		.Select(p => new
 		{
-			Id = p.Id,
-			Name = p.Name,
-			Description = p.Description,
-			Category = p.Category,
-			Price = p.Price,
+			Product = p,
 			Similarity = CalculateCosineSimilarity(queryEmbedding, p.Embedding)
 		})
 		.OrderByDescending(x => x.Similarity)
 		.Take(topK)
 		.ToList();
 
+	Console.WriteLine($"  Trovati {scoredResults.Count} risultati:\n");
+
 	foreach (var result in scoredResults)
 	{
-		Console.WriteLine($"  • {result.Name}");
-		Console.WriteLine($"    Categoria: {result.Category}");
-		Console.WriteLine($"    Prezzo: €{result.Price:N2}");
+		Console.WriteLine($"  • {result.Product.Name}");
+		Console.WriteLine($"    Categoria: {result.Product.Category}");
+		Console.WriteLine($"    Prezzo: €{result.Product.Price:N2}");
 		Console.WriteLine($"    Similarità: {result.Similarity:P2}");
-		Console.WriteLine($"    {result.Description}");
+		Console.WriteLine($"    {result.Product.Description}");
 		Console.WriteLine();
 	}
+}
+
+/// <summary>
+/// Calcola la similarità coseno tra due vettori
+/// </summary>
+float CalculateCosineSimilarity(List<float> vector1, List<float> vector2)
+{
+	if (vector1.Count != vector2.Count)
+		throw new ArgumentException("I vettori devono avere la stessa dimensione");
+
+	float dotProduct = 0;
+	float magnitude1 = 0;
+	float magnitude2 = 0;
+
+	for (int i = 0; i < vector1.Count; i++)
+	{
+		dotProduct += vector1[i] * vector2[i];
+		magnitude1 += vector1[i] * vector1[i];
+		magnitude2 += vector2[i] * vector2[i];
+	}
+
+	var denominator = (float)(Math.Sqrt(magnitude1) * Math.Sqrt(magnitude2));
+	return denominator == 0 ? 0 : dotProduct / denominator;
 }
 
 /// <summary>
@@ -204,30 +268,4 @@ List<float> GenerateMockEmbedding(string text)
 	return embedding;
 }
 
-/// <summary>
-/// Calcola la similarità coseno tra due vettori
-/// </summary>
-float CalculateCosineSimilarity(List<float> vector1, List<float> vector2)
-{
-	if (vector1.Count != vector2.Count)
-		throw new ArgumentException("I vettori devono avere la stessa dimensionalità");
 
-	float dotProduct = 0;
-	float magnitude1 = 0;
-	float magnitude2 = 0;
-
-	for (int i = 0; i < vector1.Count; i++)
-	{
-		dotProduct += vector1[i] * vector2[i];
-		magnitude1 += vector1[i] * vector1[i];
-		magnitude2 += vector2[i] * vector2[i];
-	}
-
-	magnitude1 = MathF.Sqrt(magnitude1);
-	magnitude2 = MathF.Sqrt(magnitude2);
-
-	if (magnitude1 == 0 || magnitude2 == 0)
-		return 0;
-
-	return dotProduct / (magnitude1 * magnitude2);
-}

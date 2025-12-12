@@ -23,8 +23,6 @@ public class ProductContext : DbContext
 	{
 		modelBuilder.Entity<Product>(entity =>
 		{
-			entity.ToTable("Products");
-
 			entity.HasKey(e => e.Id);
 
 			entity.Property(e => e.Name)
@@ -32,24 +30,26 @@ public class ProductContext : DbContext
 				.HasMaxLength(200);
 
 			entity.Property(e => e.Description)
+				.IsRequired()
 				.HasMaxLength(1000);
 
 			entity.Property(e => e.Category)
+				.IsRequired()
 				.HasMaxLength(100);
 
 			entity.Property(e => e.Price)
-				.HasColumnType("decimal(18,2)");
+				.HasPrecision(18, 2);
 
-			// EF Core 10 Feature: Primitive Collections
-			// List<float> viene automaticamente salvato come JSON
+			// *** EF Core 10 FEATURE: Primitive Collection ***
+			// List<float> viene automaticamente memorizzata come JSON in SQL Server
+			// Non serve conversione manuale o colonne aggiuntive!
 			entity.PrimitiveCollection(e => e.Embedding)
 				.IsRequired();
 
-			// Indice per ottimizzare le query
+			// EF Core 10: Indici per ottimizzare le query
 			entity.HasIndex(e => e.Category);
+			entity.HasIndex(e => e.Price);
 			entity.HasIndex(e => e.CreatedAt);
 		});
-
-		base.OnModelCreating(modelBuilder);
 	}
 }
