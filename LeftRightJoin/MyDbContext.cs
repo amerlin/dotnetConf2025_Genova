@@ -13,7 +13,9 @@ namespace LeftRightJoin
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseInMemoryDatabase("TestDb");
+            // Usa SQL Server LocalDB invece di InMemory
+            optionsBuilder.UseSqlServer(
+                @"Server=(localdb)\mssqllocaldb;Database=LeftJoin;Trusted_Connection=True;TrustServerCertificate=True");
         }
     }
 }
