@@ -13,7 +13,7 @@ var loggerFactory = LoggerFactory.Create(builder =>
 var options = new DbContextOptionsBuilder<ApplicationDbContext>()
 	.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=SensitiveDataLoggingDemo;Trusted_Connection=True;TrustServerCertificate=True;")
 	.UseLoggerFactory(loggerFactory)
-	.EnableSensitiveDataLogging() // Abilita il logging dei dati sensibili (solo per sviluppo!)
+	// .EnableSensitiveDataLogging() // Abilita il logging dei dati sensibili (solo per sviluppo!)
 	.EnableDetailedErrors()
 	.Options;
 
