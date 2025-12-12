@@ -40,10 +40,9 @@ public class ProductContext : DbContext
 			entity.Property(e => e.Price)
 				.HasColumnType("decimal(18,2)");
 
-			// Configurazione del tipo VECTOR per SQL Server 2025
-			// Il vettore ha 384 dimensioni (comune per modelli come all-MiniLM-L6-v2)
-			entity.Property(e => e.Embedding)
-				.HasColumnType("vector(384)")
+			// EF Core 10 Feature: Primitive Collections
+			// List<float> viene automaticamente salvato come JSON
+			entity.PrimitiveCollection(e => e.Embedding)
 				.IsRequired();
 
 			// Indice per ottimizzare le query

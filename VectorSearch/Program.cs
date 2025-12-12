@@ -130,29 +130,39 @@ async Task PerformVectorSearchAsync()
 /// <summary>
 /// Esegue la ricerca vettoriale e visualizza i risultati
 /// </summary>
-async Task SearchAndDisplayAsync(ProductContext context, float[] queryEmbedding, int topK)
+async Task SearchAndDisplayAsync(ProductContext context, List<float> queryEmbedding, int topK)
 {
-	// SQL Server 2025 supporta la funzione VECTOR_DISTANCE per calcolare la similarità
-	// Usiamo la distanza coseno (più bassa = più simile)
-	var results = await context.Products
-		.FromSqlRaw(@"
-            SELECT TOP {0} 
-                Id, Name, Description, Category, Price, Embedding, CreatedAt,
-                VECTOR_DISTANCE('cosine', Embedding, @queryVector) AS Distance
-            FROM Products
-            ORDER BY Distance ASC",
-			topK,
-			queryEmbedding)
+	Console.WriteLine("  Esecuzione ricerca vettoriale...");
+
+	// EF Core 10 Feature: Caricamento ottimizzato con proiezione
+	// Carichiamo solo i campi necessari per la ricerca
+	var allProducts = await context.Products
+		.AsNoTracking() // EF Core 10: Performance ottimizzata per query read-only
+		.Select(p => new
+		{
+			p.Id,
+			p.Name,
+			p.Description,
+			p.Category,
+			p.Price,
+			p.Embedding
+		})
 		.ToListAsync();
 
-	// Nota: in una vera implementazione, dovresti usare EF.Functions o un metodo personalizzato
-	// Qui mostriamo il concetto. Per ora, facciamo una query alternativa:
+	Console.WriteLine($"  Prodotti caricati: {allProducts.Count}");
+	Console.WriteLine($"  Calcolo similarità coseno...\n");
 
-	var allProducts = await context.Products.ToListAsync();
+	// Calcolo della similarità vettoriale (in produzione, SQL Server 2025 
+	// supporterebbe VECTOR_DISTANCE nativamente, ma per questa demo
+	// usiamo il calcolo in-memory per garantire la compatibilità)
 	var scoredResults = allProducts
 		.Select(p => new
 		{
-			Product = p,
+			Id = p.Id,
+			Name = p.Name,
+			Description = p.Description,
+			Category = p.Category,
+			Price = p.Price,
 			Similarity = CalculateCosineSimilarity(queryEmbedding, p.Embedding)
 		})
 		.OrderByDescending(x => x.Similarity)
@@ -161,11 +171,11 @@ async Task SearchAndDisplayAsync(ProductContext context, float[] queryEmbedding,
 
 	foreach (var result in scoredResults)
 	{
-		Console.WriteLine($"  • {result.Product.Name}");
-		Console.WriteLine($"    Categoria: {result.Product.Category}");
-		Console.WriteLine($"    Prezzo: €{result.Product.Price:N2}");
+		Console.WriteLine($"  • {result.Name}");
+		Console.WriteLine($"    Categoria: {result.Category}");
+		Console.WriteLine($"    Prezzo: €{result.Price:N2}");
 		Console.WriteLine($"    Similarità: {result.Similarity:P2}");
-		Console.WriteLine($"    {result.Product.Description}");
+		Console.WriteLine($"    {result.Description}");
 		Console.WriteLine();
 	}
 }
@@ -174,19 +184,19 @@ async Task SearchAndDisplayAsync(ProductContext context, float[] queryEmbedding,
 /// Genera un embedding mock per scopi dimostrativi
 /// In produzione, useresti un modello di embedding reale (OpenAI, Azure OpenAI, Sentence Transformers, etc.)
 /// </summary>
-float[] GenerateMockEmbedding(string text)
+List<float> GenerateMockEmbedding(string text)
 {
 	var random = new Random(text.GetHashCode()); // Seed basato sul testo per consistenza
-	var embedding = new float[384];
+	var embedding = new List<float>(384);
 
 	for (int i = 0; i < 384; i++)
 	{
-		embedding[i] = (float)(random.NextDouble() * 2 - 1); // Valori tra -1 e 1
+		embedding.Add((float)(random.NextDouble() * 2 - 1)); // Valori tra -1 e 1
 	}
 
 	// Normalizza il vettore
 	var magnitude = Math.Sqrt(embedding.Sum(x => x * x));
-	for (int i = 0; i < embedding.Length; i++)
+	for (int i = 0; i < embedding.Count; i++)
 	{
 		embedding[i] /= (float)magnitude;
 	}
@@ -197,16 +207,16 @@ float[] GenerateMockEmbedding(string text)
 /// <summary>
 /// Calcola la similarità coseno tra due vettori
 /// </summary>
-float CalculateCosineSimilarity(float[] vector1, float[] vector2)
+float CalculateCosineSimilarity(List<float> vector1, List<float> vector2)
 {
-	if (vector1.Length != vector2.Length)
-		throw new ArgumentException("I vettori devono avere la stessa lunghezza");
+	if (vector1.Count != vector2.Count)
+		throw new ArgumentException("I vettori devono avere la stessa dimensionalità");
 
 	float dotProduct = 0;
 	float magnitude1 = 0;
 	float magnitude2 = 0;
 
-	for (int i = 0; i < vector1.Length; i++)
+	for (int i = 0; i < vector1.Count; i++)
 	{
 		dotProduct += vector1[i] * vector2[i];
 		magnitude1 += vector1[i] * vector1[i];

@@ -26,10 +26,9 @@ public class Product
 
 	/// <summary>
 	/// Vettore di embedding per la ricerca semantica
-	/// SQL Server 2025 supporta VECTOR come tipo nativo
+	/// EF Core 10 supporta Primitive Collections, salvato come JSON
 	/// </summary>
-	[Column(TypeName = "vector(384)")]
-	public float[] Embedding { get; set; } = Array.Empty<float>();
+	public List<float> Embedding { get; set; } = new();
 
 	public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
