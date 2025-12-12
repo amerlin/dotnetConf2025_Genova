@@ -1,62 +1,229 @@
-# Vector Search con Entity Framework Core 10 e SQL Server 2025
+# Vector Search con Entity Framework Core 10
 
-Questo progetto dimostra come implementare la ricerca vettoriale (vector search) utilizzando Entity Framework Core 10 e SQL Server 2025.
+Questa demo mostra come implementare la **ricerca vettoriale semantica** usando **Entity Framework Core 10 Primitive Collections** e **SQL Server LocalDB**.
 
-## Caratteristiche
+## Caratteristiche Principali
 
-- **Entity Framework Core 10**: Ultima versione del popolare ORM per .NET
-- **SQL Server 2025**: Supporto nativo per il tipo `VECTOR` e funzioni di similarità
-- **Vector Search**: Ricerca semantica basata su embeddings vettoriali
-- **Similarità Coseno**: Calcolo della similarità tra vettori per ranking dei risultati
+- **EF Core 10 Primitive Collections**: Storage automatico di `List<float>` come JSON
+- **Ricerca Semantica**: Calcolo della similarità coseno per trovare prodotti simili
+- **AsNoTracking**: Ottimizzazione delle performance per query read-only
+- **LINQ su Collections**: Query avanzate usando Count e altri metodi su collezioni
+- **Zero SQL Raw**: Implementazione completamente LINQ-based
+- **LocalDB**: Database locale per testing e sviluppo
 
 ## Struttura del Progetto
 
 ```
 VectorSearch/
-├── Program.cs           # Entry point con esempi di ricerca
-├── Product.cs           # Modello con supporto vettoriale
-├── ProductContext.cs    # DbContext per SQL Server 2025
-└── VectorSearch.csproj  # File di progetto con dipendenze
+├── Product.cs          # Modello con embedding vettoriale List<float>
+├── ProductContext.cs   # DbContext con configurazione Primitive Collections
+├── Program.cs          # Demo completa con esempi di ricerca semantica
+└── README.md          # Questa documentazione
 ```
 
 ## Come Funziona
 
 ### 1. Modello Product
 
-Il modello `Product` include una proprietà `Embedding` di tipo `float[]` mappata al tipo nativo `vector(384)` di SQL Server 2025:
-
 ```csharp
-[Column(TypeName = "vector(384)")]
-public float[] Embedding { get; set; }
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Description { get; set; }
+    public decimal Price { get; set; }
+    
+    // EF Core 10 Primitive Collection - memorizzato automaticamente come JSON
+    public List<float> Embedding { get; set; } = new();
+}
 ```
 
-### 2. DbContext
+Gli **embeddings** sono vettori di 384 dimensioni che rappresentano il significato semantico del prodotto. EF Core 10 li serializza automaticamente in JSON nel database.
 
-Il `ProductContext` configura la connessione a SQL Server 2025 e definisce il mapping del tipo vettoriale:
-
-```csharp
-entity.Property(e => e.Embedding)
-    .HasColumnType("vector(384)")
-    .IsRequired();
-```
-
-### 3. Ricerca Vettoriale
-
-La ricerca vettoriale utilizza la similarità coseno per trovare i prodotti più rilevanti:
+### 2. Database Context con Primitive Collections
 
 ```csharp
-var similarity = CalculateCosineSimilarity(queryEmbedding, productEmbedding);
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<Product>(entity =>
+    {
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+        entity.Property(e => e.Description).HasMaxLength(1000);
+        entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
+        
+        // Configurazione Primitive Collection per List<float>
+        entity.PrimitiveCollection(e => e.Embedding)
+              .IsRequired()
+              .HasMaxLength(50000);
+    });
+}
 ```
+
+La chiamata a `PrimitiveCollection()` è la **nuova feature di EF Core** che permette di memorizzare liste di tipi primitivi (come `List<float>`) direttamente come JSON nel database, senza bisogno di conversioni personalizzate.
+
+### 3. Ricerca Vettoriale con LINQ
+
+La ricerca usa **query LINQ pure** con calcolo in-memory della similarità coseno:
+
+```csharp
+// Recupera tutti i prodotti senza tracking (performance)
+var products = await context.Products
+    .AsNoTracking()
+    .ToListAsync();
+
+// Calcola cosine similarity in-memory per ogni prodotto
+var results = products
+    .Select(p => new
+    {
+        Product = p,
+        Similarity = CalculateCosineSimilarity(queryEmbedding, p.Embedding)
+    })
+    .OrderByDescending(r => r.Similarity)
+    .Take(5)
+    .ToList();
+```
+
+### 4. Calcolo Cosine Similarity
+
+```csharp
+static double CalculateCosineSimilarity(List<float> vector1, List<float> vector2)
+{
+    if (vector1.Count != vector2.Count)
+        throw new ArgumentException("I vettori devono avere la stessa dimensione");
+
+    double dotProduct = 0;
+    double magnitude1 = 0;
+    double magnitude2 = 0;
+
+    for (int i = 0; i < vector1.Count; i++)
+    {
+        dotProduct += vector1[i] * vector2[i];
+        magnitude1 += vector1[i] * vector1[i];
+        magnitude2 += vector2[i] * vector2[i];
+    }
+
+    magnitude1 = Math.Sqrt(magnitude1);
+    magnitude2 = Math.Sqrt(magnitude2);
+
+    return magnitude1 > 0 && magnitude2 > 0 
+        ? dotProduct / (magnitude1 * magnitude2) 
+        : 0;
+}
+```
+
+## Feature EF Core 10 Dimostrate
+
+La demo mostra queste funzionalità di EF Core 10:
+
+1. **Primitive Collections**: Storage automatico di `List<float>` come JSON
+2. **AsNoTracking**: Query ottimizzate per scenari read-only
+3. **Count su Collections**: LINQ queries che usano `.Count()` su proprietà di tipo collection
+4. **Projections**: Select con proiezioni anonime per performance
+5. **Query Complesse**: Combinazione di filtri, ordinamenti e limitazioni
+6. **Logging Dettagliato**: Informazioni complete sulle query SQL generate
 
 ## Prerequisiti
 
 - .NET 10.0 SDK
-- SQL Server 2025 (o LocalDB)
+- SQL Server LocalDB (incluso in Visual Studio)
 - Visual Studio 2025 o VS Code
 
 ## Esecuzione
 
-1. Ripristina i pacchetti NuGet:
+1. Apri il progetto in Visual Studio o esegui da terminale:
+   ```bash
+   dotnet run
+   ```
+
+2. Il programma:
+   - Crea automaticamente il database LocalDB
+   - Inserisce 8 prodotti di esempio con embeddings
+   - Esegue 4 ricerche semantiche diverse
+   - Mostra i risultati ordinati per similarità
+
+## Output di Esempio
+
+```
+=== Inizializzazione Database ===
+✓ Database creato e popolato con 8 prodotti
+
+=== Demo Features EF Core 10 ===
+✓ Primitive Collections: Tutti i prodotti hanno embeddings (384 dimensioni)
+✓ Count su collections: 8 prodotti con embeddings validi
+✓ AsNoTracking: Query ottimizzata per read-only
+
+=== Ricerca Vettoriale: "smartphone premium" ===
+
+Risultati (ordinati per similarità):
+1. Smartphone Pro Max - €1099.99
+   Descrizione: Smartphone di fascia alta
+   Similarità: 0.956 ⭐⭐⭐⭐⭐
+
+2. Tablet Ultra - €899.99
+   Descrizione: Tablet professionale
+   Similarità: 0.823 ⭐⭐⭐⭐
+```
+
+## Architettura e Flusso dei Dati
+
+1. **Generazione Embeddings**: I vettori vengono generati con `GenerateMockEmbedding()` (in produzione si userebbe un modello AI)
+2. **Storage con Primitive Collections**: EF Core serializza automaticamente `List<float>` in JSON
+3. **Query LINQ**: AsNoTracking recupera tutti i prodotti senza tracking
+4. **Calcolo In-Memory**: La similarità coseno è calcolata per ogni prodotto
+5. **Ranking**: I risultati sono ordinati per similarità decrescente
+
+## Per la Produzione
+
+In uno scenario reale, dovresti:
+
+1. **Usare embeddings reali** da modelli AI:
+   - Azure OpenAI (text-embedding-ada-002)
+   - Sentence Transformers (all-MiniLM-L6-v2)
+   - Modelli Hugging Face
+
+2. **Ottimizzare le performance**:
+   - Per dataset grandi, considera database vettoriali dedicati (Qdrant, Pinecone, Weaviate)
+   - Implementa caching degli embeddings
+   - Usa batch processing per inserimenti
+
+3. **Implementare funzionalità aggiuntive**:
+   - Filtri pre-ricerca (categoria, prezzo, ecc.)
+   - Ricerca ibrida (keyword + vettoriale)
+   - Re-ranking dei risultati
+
+## Perché Primitive Collections?
+
+Le **Primitive Collections** di EF Core 10 offrono:
+
+- ✅ **Semplicità**: Nessuna conversione personalizzata necessaria
+- ✅ **Type Safety**: Lavori con `List<float>` nativo in C#
+- ✅ **Automatismo**: EF Core gestisce la serializzazione JSON
+- ✅ **LINQ Support**: Query native su proprietà collection
+- ✅ **Portabilità**: Funziona su qualsiasi database che supporta JSON
+
+## Alternative a Primitive Collections
+
+Se hai bisogno di funzioni vettoriali native del database:
+
+- **SQL Server 2025**: Tipo `vector(384)` con `VECTOR_DISTANCE()`
+- **PostgreSQL**: Estensione `pgvector` con operatori `<->`, `<#>`, `<=>`
+- **Azure Cosmos DB**: Ricerca vettoriale integrata
+- **Dedicated Vector DBs**: Qdrant, Pinecone, Milvus, Weaviate
+
+Tuttavia, per **dataset piccoli-medi** (< 100K record), il calcolo in-memory con Primitive Collections è più che sufficiente e molto più semplice.
+
+## Risorse
+
+- [Entity Framework Core 10 Documentation](https://docs.microsoft.com/ef/core/)
+- [Primitive Collections in EF Core](https://learn.microsoft.com/ef/core/what-is-new/ef-core-8.0/whatsnew#primitive-collections)
+- [Vector Search Best Practices](https://docs.microsoft.com/azure/search/vector-search-overview)
+- [Cosine Similarity Explained](https://en.wikipedia.org/wiki/Cosine_similarity)
+
+## Licenza
+
+Progetto di esempio per scopi educativi - .NET Conf Genova.
+
    ```bash
    dotnet restore
    ```
