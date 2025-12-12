@@ -27,15 +27,22 @@ public class AppDbContext : DbContext
 			entity.Property(e => e.Price)
 				.HasPrecision(18, 2);
 
-			// Configura la colonna JSON per Details
-			entity.OwnsOne(e => e.Details, ownedNavigationBuilder =>
+			// Configurazione usando Complex Property per supportare ExecuteUpdate
+			// I Complex Types in EF Core 10 supportano update bulk con ExecuteUpdateAsync
+			entity.ComplexProperty(e => e.Details, builder =>
 			{
-				ownedNavigationBuilder.ToJson();
+				builder.IsRequired();
+				builder.Property(d => d.Category).HasMaxLength(100);
+				builder.Property(d => d.Manufacturer).HasMaxLength(100);
 
-				ownedNavigationBuilder.OwnsOne(d => d.Dimensions);
+				// Dimensioni come complex property annidato
+				builder.ComplexProperty(d => d.Dimensions, dimBuilder =>
+				{
+					dimBuilder.Property(dim => dim.Unit).HasMaxLength(10);
+				});
 			});
 
-			// Configura la colonna JSON per Specifications
+			// Specifications con ToJson per le collezioni
 			entity.OwnsOne(e => e.Specifications, ownedNavigationBuilder =>
 			{
 				ownedNavigationBuilder.ToJson();

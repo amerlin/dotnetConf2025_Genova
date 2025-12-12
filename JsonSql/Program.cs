@@ -168,6 +168,9 @@ Console.WriteLine($"✓ Aggiornato {laptop.Name} con nuovo tag e prezzo\n");
 // ===== EXECUTEUPDATE - AGGIORNAMENTO BULK =====
 Console.WriteLine("--- ExecuteUpdate - Aggiornamento bulk ---");
 
+// ExecuteUpdate permette di aggiornare più righe con una singola query SQL
+// senza caricare le entità in memoria - ottimo per performance!
+
 // 1. Applica uno sconto del 10% a tutti i prodotti Apple
 var appleRowsAffected = await context.Products
 	.Where(p => p.Details.Manufacturer == "Apple")
@@ -175,21 +178,21 @@ var appleRowsAffected = await context.Products
 		.SetProperty(p => p.Price, p => p.Price * 0.9m));
 Console.WriteLine($"✓ Applicato sconto 10% a {appleRowsAffected} prodotti Apple");
 
-// 2. Aggiorna la categoria per tutti i prodotti di arredamento
+// 2. Aggiorna la categoria per tutti i prodotti di arredamento (Complex Property)
 var furnitureRowsAffected = await context.Products
 	.Where(p => p.Details.Category == "Arredamento")
 	.ExecuteUpdateAsync(setters => setters
 		.SetProperty(p => p.Details.Category, "Mobili & Arredamento"));
 Console.WriteLine($"✓ Aggiornata categoria per {furnitureRowsAffected} prodotti di arredamento");
 
-// 3. Aumenta la garanzia di 12 mesi per tutti i prodotti che hanno specifiche
-var warrantyRowsAffected = await context.Products
-	.Where(p => p.Specifications != null)
+// 3. Aggiorna il manufacturer per i prodotti di una specifica categoria
+var manufacturerRowsAffected = await context.Products
+	.Where(p => p.Details.Category == "Mobili & Arredamento")
 	.ExecuteUpdateAsync(setters => setters
-		.SetProperty(p => p.Specifications!.WarrantyMonths, p => p.Specifications!.WarrantyMonths + 12));
-Console.WriteLine($"✓ Estesa garanzia di 12 mesi per {warrantyRowsAffected} prodotti");
+		.SetProperty(p => p.Details.Manufacturer, "IKEA Sweden"));
+Console.WriteLine($"✓ Aggiornato manufacturer per {manufacturerRowsAffected} prodotti");
 
-// 4. Aggiorna proprietà nested nelle dimensioni - converti unità da cm a mm
+// 4. Converti unità di misura delle dimensioni
 var dimensionsRowsAffected = await context.Products
 	.Where(p => p.Details.Dimensions != null && p.Details.Dimensions.Unit == "cm")
 	.ExecuteUpdateAsync(setters => setters
@@ -199,15 +202,35 @@ var dimensionsRowsAffected = await context.Products
 		.SetProperty(p => p.Details.Dimensions!.Unit, "mm"));
 Console.WriteLine($"✓ Convertite dimensioni da cm a mm per {dimensionsRowsAffected} prodotti");
 
-// 5. Aggiorna il manufacturer per tutti i prodotti di una categoria specifica
-var manufacturerRowsAffected = await context.Products
-	.Where(p => p.Details.Category == "Mobili & Arredamento")
+// 5. Aggiornamento combinato: prezzo E categoria insieme
+var comboRowsAffected = await context.Products
+	.Where(p => p.Details.Category == "Computer")
 	.ExecuteUpdateAsync(setters => setters
-		.SetProperty(p => p.Details.Manufacturer, "IKEA Sweden"));
-Console.WriteLine($"✓ Aggiornato manufacturer per {manufacturerRowsAffected} prodotti di arredamento\n");
+		.SetProperty(p => p.Price, p => p.Price * 1.05m) // +5%
+		.SetProperty(p => p.Details.Category, "Computer & Tecnologia"));
+Console.WriteLine($"✓ Aggiornati prezzo e categoria per {comboRowsAffected} prodotti Computer");
+
+// NOTA: Le proprietà mappate con ToJson() (come Specifications.Features)
+// non supportano ExecuteUpdate e richiedono SaveChanges() o SQL raw
+Console.WriteLine("\n--- Aggiornamento JSON collections con SaveChanges ---");
+var productsWithSpecs = await context.Products
+	.Where(p => p.Specifications != null)
+	.ToListAsync();
+foreach (var product in productsWithSpecs)
+{
+	if (product.Specifications != null)
+	{
+		product.Specifications.WarrantyMonths += 12;
+	}
+}
+await context.SaveChangesAsync();
+Console.WriteLine($"✓ Estesa garanzia di 12 mesi per {productsWithSpecs.Count} prodotti\n");
 
 // ===== VISUALIZZAZIONE FINALE =====
 Console.WriteLine("--- Tutti i prodotti (dettaglio completo) ---");
+
+// Ricarica i dati dal database per mostrare gli aggiornamenti
+context.ChangeTracker.Clear(); // Pulisce il change tracker
 var allProducts = await context.Products.ToListAsync();
 foreach (var p in allProducts)
 {
